@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Document</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .custom-scrollbar {
+        position: fixed;
+        right: 20px;
+        top: 20px;
+        bottom: 20px;
+        width: 10px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 5px;
+      }
+      .scroll-thumb {
+        position: absolute;
+        width: 100%;
+        background-color: rgba(255, 255, 255, 0.5);
+        border-radius: 5px;
+      }
+      .scroll-numbers {
+        position: absolute;
+        left: -50px;
+        width: 40px;
+        text-align: right;
+        color: white;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="w-full bg-zinc-900">
+      <div class="parent relative top-0 left-0 w-full h-[2500vh]">
+        <div class="w-full sticky top-0 left-0 h-screen">
+          <canvas class="w-full h-screen" id="frame"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="custom-scrollbar">
+      <div class="scroll-thumb"></div>
+      <div class="scroll-numbers"></div>
+    </div>
+
+    <!-- Include GSAP and ScrollTrigger -->
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"
+      integrity="sha512-7eHRwcbYkK4d9g/6tD/mhkf++eoTHwpNM9woBxtPUBWm67zeAfFC+HrdoE2GanKeocly/VxeLvIqwvCdk7qScg=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollToPlugin.min.js"></script>
+
+    <script>
+      const canvas = document.querySelector("canvas");
+      const context = canvas.getContext("2d");
+      let autoScrollAnimation;
+      const scrollbar = document.querySelector(".custom-scrollbar");
+      const scrollThumb = document.querySelector(".scroll-thumb");
+      const scrollNumbers = document.querySelector(".scroll-numbers");
+
+      const frames = {
+        currentIndex: 1, // Start from index 1
+        maxIndex: 7552,
+        batchSize: 200, // Number of images to load in each batch
+      };
+
+      let imagesLoaded = 0;
+      const images = [];
+
+      function preloadImage(index) {
+        const imageUrl = `https://my-threejs-3d-models.s3.amazonaws.com/foodChainFrames/frame_${index
+          .toString()
+          .padStart(4, "0")}.jpeg`;
+        const img = new Image();
+        img.src = imageUrl;
+        img.onload = () => {
+          images[index] = img;
+          imagesLoaded++;
+          console.log(`Image loaded at index ${index}`); // Debugging info
+
+          // Start animation when the first batch of images is loaded
+          if (imagesLoaded === frames.batchSize && !autoScrollAnimation) {
+            loadImage(frames.currentIndex);
+            startAnimation();
+            autoScroll();
+          }
+        };
+        img.onerror = () => {
+          console.error(
+            `Failed to load image at index ${index}. URL: ${imageUrl}`
+          ); // Debugging info
+        };
+      }
+
+      function preloadImages(startIndex) {
+        const range = frames.batchSize;
+
+        for (
+          let i = Math.max(startIndex, 1); // Start from index 1
+          i <= Math.min(startIndex + range, frames.maxIndex);
+          i++
+        ) {
+          if (!images[i]) {
+            preloadImage(i);
+          }
+        }
+      }
+
+      function loadImage(index) {
+        if (index >= 1 && index <= frames.maxIndex) {
+          // Ensure index starts from 1
+          const img = images[index];
+          if (img) {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const scaleX = canvas.width / img.width;
+            const scaleY = canvas.height / img.height;
+            const scale = Math.max(scaleX, scaleY);
+
+            const newWidth = img.width * scale;
+            const newHeight = img.height * scale;
+
+            const offsetX = (canvas.width - newWidth) / 2;
+            const offsetY = (canvas.height - newHeight) / 2;
+
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = "high";
+            context.drawImage(img, offsetX, offsetY, newWidth, newHeight);
+            frames.currentIndex = index;
+          } else {
+            console.error(
+              `Image at index ${index} is not loaded or does not exist.`
+            );
+          }
+        }
+      }
+
+      function startAnimation() {
+        ScrollTrigger.create({
+          trigger: ".parent",
+          start: "top top",
+          end: "bottom bottom",
+          scrub: true,
+          markers: true,
+          onUpdate: function (self) {
+            const index = Math.floor(
+              gsap.utils.mapRange(0, 1, 1, frames.maxIndex, self.progress)
+            );
+            loadImage(index);
+            updateScrollbar();
+
+            // Preload the next batch when nearing the end of the current batch
+            if (index >= frames.currentIndex + frames.batchSize - 50) {
+              preloadImages(index + 1);
+            }
+          },
+        });
+      }
+
+      function autoScroll() {
+        const duration = 60; // Duration of auto-scroll in seconds
+        const scrollDistance =
+          document.documentElement.scrollHeight - window.innerHeight;
+
+        autoScrollAnimation = gsap.to(window, {
+          duration: duration,
+          scrollTo: scrollDistance,
+          ease: "none",
+          onUpdate: updateScrollbar,
+          onComplete: () => {
+            // Optionally, do something when auto-scroll completes
+          },
+        });
+
+        // Add event listeners to interrupt auto-scroll
+        window.addEventListener("wheel", interruptAutoScroll);
+        window.addEventListener("touchstart", interruptAutoScroll);
+        scrollbar.addEventListener("mousedown", interruptAutoScroll);
+      }
+
+      function interruptAutoScroll() {
+        if (autoScrollAnimation) {
+          autoScrollAnimation.kill(); // Stop the auto-scroll animation
+          autoScrollAnimation = null;
+
+          // Remove the event listeners
+          window.removeEventListener("wheel", interruptAutoScroll);
+          window.removeEventListener("touchstart", interruptAutoScroll);
+        }
+      }
+
+      function updateScrollbar() {
+        const scrollPercentage =
+          window.scrollY /
+          (document.documentElement.scrollHeight - window.innerHeight);
+        const thumbHeight = Math.max(
+          20,
+          (scrollbar.clientHeight * window.innerHeight) /
+            document.documentElement.scrollHeight
+        );
+        scrollThumb.style.height = `${thumbHeight}px`;
+        scrollThumb.style.top = `${
+          scrollPercentage * (scrollbar.clientHeight - thumbHeight)
+        }px`;
+      }
+
+      function showScrollNumber(e) {
+        const rect = scrollbar.getBoundingClientRect();
+        const percentage = (e.clientY - rect.top) / rect.height;
+        const frameNumber = Math.floor(percentage * frames.maxIndex);
+
+        // Calculate meters based on frame number
+        // Assuming each frame represents 1 meter, adjust this calculation if needed
+        const meters = frameNumber;
+
+        // Display the number with "m" appended
+        scrollNumbers.textContent = `${meters}m`;
+        scrollNumbers.style.top = `${e.clientY - rect.top}px`;
+      }
+
+      scrollbar.addEventListener("mousemove", showScrollNumber);
+      scrollbar.addEventListener("mouseleave", () => {
+        scrollNumbers.textContent = "";
+      });
+
+      window.addEventListener("scroll", updateScrollbar);
+      window.addEventListener("resize", updateScrollbar);
+
+      updateScrollbar();
+      preloadImages(frames.currentIndex); // Start by preloading the first batch
+    </script>
+  </body>
+</html>
