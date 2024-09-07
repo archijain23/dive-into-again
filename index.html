@@ -3,7 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
     <title>Document</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -67,7 +66,8 @@
       const frames = {
         currentIndex: 1,
         maxIndex: 7552,
-        preloadRange: 200, // Number of images to load in each batch
+        preloadRange: 100, // Reduced batch size for better performance
+        lazyLoadRange: 100, // Lazy load images within this range
       };
 
       const images = new Map();
@@ -86,14 +86,10 @@
           const img = new Image();
           img.src = imageUrl;
           img.onload = () => {
-            console.log(`Image loaded at index ${index}`);
             images.set(index, img);
             resolve(img);
           };
           img.onerror = () => {
-            console.error(
-              `Failed to load image at index ${index}. URL: ${imageUrl}`
-            );
             reject(new Error(`Image load failed at index ${index}`));
           };
         });
@@ -142,10 +138,6 @@
             context.imageSmoothingQuality = "high";
             context.drawImage(img, offsetX, offsetY, newWidth, newHeight);
             frames.currentIndex = index;
-          } else {
-            console.error(
-              `Image at index ${index} is not loaded or does not exist.`
-            );
           }
         }
       }
@@ -164,8 +156,9 @@
             loadImage(index);
             updateScrollbar();
 
+            // Lazy load images around the current view
             if (
-              index >= frames.currentIndex + frames.preloadRange - 50 &&
+              index >= frames.currentIndex + frames.lazyLoadRange - 10 &&
               !isPreloading
             ) {
               preloadImages(index + 1);
@@ -184,9 +177,6 @@
           scrollTo: scrollDistance,
           ease: "none",
           onUpdate: updateScrollbar,
-          onComplete: () => {
-            // Optionally, do something when auto-scroll completes
-          },
         });
 
         window.addEventListener("wheel", interruptAutoScroll);
