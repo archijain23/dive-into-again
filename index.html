@@ -30,9 +30,47 @@
         font-family: Arial, sans-serif;
         font-size: 14px;
       }
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.8);
+        color: white;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+        font-size: 24px;
+      }
+      .loading-bar-container {
+        width: 80%;
+        height: 20px;
+        background-color: rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+        overflow: hidden;
+        margin-top: 20px;
+      }
+      .loading-bar {
+        width: 0%;
+        height: 100%;
+        background-color: white;
+        border-radius: 10px;
+        transition: width 0.2s ease-in-out;
+      }
     </style>
   </head>
   <body>
+    <!-- Loading UI -->
+    <div class="loading-overlay" id="loadingOverlay">
+      Loading, please wait...
+      <div class="loading-bar-container">
+        <div class="loading-bar" id="loadingBar"></div>
+      </div>
+    </div>
+
     <div class="w-full bg-zinc-900">
       <div class="parent relative top-0 left-0 w-full h-[2500vh]">
         <div class="w-full sticky top-0 left-0 h-screen">
@@ -62,16 +100,23 @@
       const scrollbar = document.querySelector(".custom-scrollbar");
       const scrollThumb = document.querySelector(".scroll-thumb");
       const scrollNumbers = document.querySelector(".scroll-numbers");
+      const loadingOverlay = document.getElementById("loadingOverlay");
+      const loadingBar = document.getElementById("loadingBar");
 
       const frames = {
         currentIndex: 1,
         maxIndex: 7552,
-        preloadRange: 100, // Reduced batch size for better performance
-        lazyLoadRange: 100, // Lazy load images within this range
       };
 
       const images = new Map();
-      let isPreloading = false;
+
+      function preloadAllImages() {
+        const preloadPromises = [];
+        for (let i = 1; i <= frames.maxIndex; i++) {
+          preloadPromises.push(preloadImage(i));
+        }
+        return Promise.all(preloadPromises);
+      }
 
       function preloadImage(index) {
         return new Promise((resolve, reject) => {
@@ -87,6 +132,7 @@
           img.src = imageUrl;
           img.onload = () => {
             images.set(index, img);
+            updateLoadingProgress(index);
             resolve(img);
           };
           img.onerror = () => {
@@ -95,25 +141,9 @@
         });
       }
 
-      async function preloadImages(startIndex) {
-        if (isPreloading) return;
-        isPreloading = true;
-        const endIndex = Math.min(
-          startIndex + frames.preloadRange,
-          frames.maxIndex
-        );
-        const preloadPromises = [];
-        for (let i = startIndex; i <= endIndex; i++) {
-          if (!images.has(i)) {
-            preloadPromises.push(preloadImage(i));
-          }
-        }
-        try {
-          await Promise.all(preloadPromises);
-        } catch (error) {
-          console.error("Error preloading images:", error);
-        }
-        isPreloading = false;
+      function updateLoadingProgress(loadedIndex) {
+        const progress = (loadedIndex / frames.maxIndex) * 100;
+        loadingBar.style.width = `${progress}%`;
       }
 
       function loadImage(index) {
@@ -155,14 +185,6 @@
             );
             loadImage(index);
             updateScrollbar();
-
-            // Lazy load images around the current view
-            if (
-              index >= frames.currentIndex + frames.lazyLoadRange - 10 &&
-              !isPreloading
-            ) {
-              preloadImages(index + 1);
-            }
           },
         });
       }
@@ -228,9 +250,18 @@
       window.addEventListener("resize", updateScrollbar);
 
       updateScrollbar();
-      preloadImages(frames.currentIndex); // Start by preloading the first batch
-      startAnimation();
-      autoScroll();
+
+      // Preload all images before starting the animation
+      preloadAllImages()
+        .then(() => {
+          // Hide the loading overlay once all images are preloaded
+          loadingOverlay.style.display = "none";
+          startAnimation();
+          autoScroll();
+        })
+        .catch((error) => {
+          console.error("Error preloading images:", error);
+        });
     </script>
   </body>
 </html>
