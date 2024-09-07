@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Smooth Scrolling with Lazy Loading</title>
+
+    <title>Document</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       .custom-scrollbar {
@@ -32,76 +33,120 @@
       }
     </style>
   </head>
-  <body class="bg-zinc-900">
-    <div class="parent relative w-full h-[2500vh]">
-      <div class="sticky top-0 left-0 w-full h-screen">
-        <canvas class="w-full h-screen" id="frame"></canvas>
+  <body>
+    <div class="w-full bg-zinc-900">
+      <div class="parent relative top-0 left-0 w-full h-[2500vh]">
+        <div class="w-full sticky top-0 left-0 h-screen">
+          <canvas class="w-full h-screen" id="frame"></canvas>
+        </div>
       </div>
     </div>
-
     <div class="custom-scrollbar">
       <div class="scroll-thumb"></div>
       <div class="scroll-numbers"></div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <!-- Include GSAP and ScrollTrigger -->
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"
+      integrity="sha512-7eHRwcbYkK4d9g/6tD/mhkf++eoTHwpNM9woBxtPUBWm67zeAfFC+HrdoE2GanKeocly/VxeLvIqwvCdk7qScg=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollToPlugin.min.js"></script>
 
     <script>
-      const canvas = document.querySelector("#frame");
+      const canvas = document.querySelector("canvas");
       const context = canvas.getContext("2d");
+      let autoScrollAnimation;
       const scrollbar = document.querySelector(".custom-scrollbar");
       const scrollThumb = document.querySelector(".scroll-thumb");
       const scrollNumbers = document.querySelector(".scroll-numbers");
-      let autoScrollAnimation;
 
       const frames = {
         currentIndex: 1,
         maxIndex: 7552,
+        preloadRange: 200, // Number of images to load in each batch
       };
 
-      const images = [];
+      const images = new Map();
+      let isPreloading = false;
 
       function preloadImage(index) {
-        const imageUrl = `https://my-threejs-3d-models.s3.amazonaws.com/foodChainFrames/frame_${index
-          .toString()
-          .padStart(4, "0")}.jpeg`;
         return new Promise((resolve, reject) => {
+          if (images.has(index)) {
+            resolve(images.get(index));
+            return;
+          }
+
+          const imageUrl = `https://my-threejs-3d-models.s3.amazonaws.com/foodChainFrames/frame_${index
+            .toString()
+            .padStart(4, "0")}.jpeg`;
           const img = new Image();
           img.src = imageUrl;
-          img.onload = () => resolve(img);
-          img.onerror = reject;
+          img.onload = () => {
+            console.log(`Image loaded at index ${index}`);
+            images.set(index, img);
+            resolve(img);
+          };
+          img.onerror = () => {
+            console.error(
+              `Failed to load image at index ${index}. URL: ${imageUrl}`
+            );
+            reject(new Error(`Image load failed at index ${index}`));
+          };
         });
       }
 
+      async function preloadImages(startIndex) {
+        if (isPreloading) return;
+        isPreloading = true;
+        const endIndex = Math.min(
+          startIndex + frames.preloadRange,
+          frames.maxIndex
+        );
+        const preloadPromises = [];
+        for (let i = startIndex; i <= endIndex; i++) {
+          if (!images.has(i)) {
+            preloadPromises.push(preloadImage(i));
+          }
+        }
+        try {
+          await Promise.all(preloadPromises);
+        } catch (error) {
+          console.error("Error preloading images:", error);
+        }
+        isPreloading = false;
+      }
+
       function loadImage(index) {
-        if (images[index]) {
-          const img = images[index];
-          canvas.width = window.innerWidth;
-          canvas.height = window.innerHeight;
+        if (index >= 1 && index <= frames.maxIndex) {
+          const img = images.get(index);
+          if (img) {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
 
-          const scaleX = canvas.width / img.width;
-          const scaleY = canvas.height / img.height;
-          const scale = Math.max(scaleX, scaleY);
+            const scaleX = canvas.width / img.width;
+            const scaleY = canvas.height / img.height;
+            const scale = Math.max(scaleX, scaleY);
 
-          const newWidth = img.width * scale;
-          const newHeight = img.height * scale;
+            const newWidth = img.width * scale;
+            const newHeight = img.height * scale;
 
-          const offsetX = (canvas.width - newWidth) / 2;
-          const offsetY = (canvas.height - newHeight) / 2;
+            const offsetX = (canvas.width - newWidth) / 2;
+            const offsetY = (canvas.height - newHeight) / 2;
 
-          context.clearRect(0, 0, canvas.width, canvas.height);
-          context.imageSmoothingEnabled = true;
-          context.imageSmoothingQuality = "high";
-          context.drawImage(img, offsetX, offsetY, newWidth, newHeight);
-        } else {
-          preloadImage(index)
-            .then((img) => {
-              images[index] = img;
-              loadImage(index);
-            })
-            .catch(console.error);
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = "high";
+            context.drawImage(img, offsetX, offsetY, newWidth, newHeight);
+            frames.currentIndex = index;
+          } else {
+            console.error(
+              `Image at index ${index} is not loaded or does not exist.`
+            );
+          }
         }
       }
 
@@ -111,14 +156,52 @@
           start: "top top",
           end: "bottom bottom",
           scrub: true,
+          markers: true,
           onUpdate: function (self) {
             const index = Math.floor(
               gsap.utils.mapRange(0, 1, 1, frames.maxIndex, self.progress)
             );
             loadImage(index);
             updateScrollbar();
+
+            if (
+              index >= frames.currentIndex + frames.preloadRange - 50 &&
+              !isPreloading
+            ) {
+              preloadImages(index + 1);
+            }
           },
         });
+      }
+
+      function autoScroll() {
+        const duration = 60; // Duration of auto-scroll in seconds
+        const scrollDistance =
+          document.documentElement.scrollHeight - window.innerHeight;
+
+        autoScrollAnimation = gsap.to(window, {
+          duration: duration,
+          scrollTo: scrollDistance,
+          ease: "none",
+          onUpdate: updateScrollbar,
+          onComplete: () => {
+            // Optionally, do something when auto-scroll completes
+          },
+        });
+
+        window.addEventListener("wheel", interruptAutoScroll);
+        window.addEventListener("touchstart", interruptAutoScroll);
+        scrollbar.addEventListener("mousedown", interruptAutoScroll);
+      }
+
+      function interruptAutoScroll() {
+        if (autoScrollAnimation) {
+          autoScrollAnimation.kill(); // Stop the auto-scroll animation
+          autoScrollAnimation = null;
+
+          window.removeEventListener("wheel", interruptAutoScroll);
+          window.removeEventListener("touchstart", interruptAutoScroll);
+        }
       }
 
       function updateScrollbar() {
@@ -140,7 +223,9 @@
         const rect = scrollbar.getBoundingClientRect();
         const percentage = (e.clientY - rect.top) / rect.height;
         const frameNumber = Math.floor(percentage * frames.maxIndex);
-        scrollNumbers.textContent = `${frameNumber}m`;
+        const meters = frameNumber;
+
+        scrollNumbers.textContent = `${meters}m`;
         scrollNumbers.style.top = `${e.clientY - rect.top}px`;
       }
 
@@ -153,7 +238,9 @@
       window.addEventListener("resize", updateScrollbar);
 
       updateScrollbar();
+      preloadImages(frames.currentIndex); // Start by preloading the first batch
       startAnimation();
+      autoScroll();
     </script>
   </body>
 </html>
